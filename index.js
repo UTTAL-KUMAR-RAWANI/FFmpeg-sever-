@@ -42,17 +42,19 @@ app.post("/merge", upload.any(), async (req, res) => {
 
     const outputPath = path.join("uploads", `output-${Date.now()}.mp4`);
 
-    ffmpeg()
-      .input(videoFile.path)
-      .input(audioFile.path)
-      .outputOptions([
-        "-c:v copy",
-        "-c:a aac",
-        "-shortest",
-        "-preset ultrafast"
-      ])
-      .save(outputPath)
-      .on("end", () => {
+ ffmpeg()
+  .input(videoFile.path)
+  .input(audioFile.path)
+  .outputOptions([
+    "-map 0:v:0",
+    "-map 1:a:0",
+    "-c:v copy",
+    "-c:a aac",
+    "-shortest",
+    "-preset ultrafast"
+  ])
+  .save(outputPath)
+  .on("end", () => {
 
         res.download(outputPath, () => {
           // Cleanup
