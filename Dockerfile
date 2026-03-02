@@ -1,14 +1,16 @@
 FROM node:18-bullseye
 
-RUN apt-get update && apt-get install -y ffmpeg
+RUN apt-get update && \
+    apt-get install -y ffmpeg && \
+    apt-get clean
 
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install --legacy-peer-deps
+RUN npm install
 
 COPY . .
 
 EXPOSE 3000
 
-CMD ["npm", "start"]
+CMD ["node", "index.js"]
