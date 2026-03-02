@@ -2,27 +2,49 @@ const express = require("express");
 const multer = require("multer");
 const ffmpeg = require("fluent-ffmpeg");
 const fs = require("fs");
+const path = require("path");
 
 const app = express();
 
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
+// IMPORTANT: Tell fluent-ffmpeg where ffmpeg is installed (Docker path)
+ffmpeg.setFfmpegPath("/usr/bin/ffmpeg");
 
-const upload = multer({ dest: "uploads/" });
+// Increase body limits (important for video uploads)
+app.use(express.json({ limit: "100mb" }));
+app.use(express.urlencoded({ limit: "100mb", extended: true }));
 
-app.post("/merge", upload.fields([
-  { name: "video", maxCount: 1 },
-  { name: "audio", maxCount: 1 }
-]), async (req, res) => {
+// Ensure uploads folder exists
+if (!fs.existsSync("uploads")) {
+  fs.mkdirSync("uploads");
+}
+
+// Multer config
+const upload = multer({
+  dest: "uploads/",
+  limits: { fileSize: 100 * 1024 * 1024 } // 100MB limit
+});
+
+app.post("/merge", upload.any(), async (req, res) => {
 
   try {
-    const videoPath = req.files.video[0].path;
-    const audioPath = req.files.audio[0].path;
-    const outputPath = `output-${Date.now()}.mp4`;
+
+    if (!req.files || req.files.length < 2) {
+      return res.status(400).send("Video and audio files are required");
+    }
+
+    // Find files by field name
+    const videoFile = req.files.find(f => f.fieldname === "video");
+    const audioFile = req.files.find(f => f.fieldname === "audio");
+
+    if (!videoFile || !audioFile) {
+      return res.status(400).send("Fields must be named 'video' and 'audio'");
+    }
+
+    const outputPath = path.join("uploads", `output-${Date.now()}.mp4`);
 
     ffmpeg()
-      .input(videoPath)
-      .input(audioPath)
+      .input(videoFile.path)
+      .input(audioFile.path)
       .outputOptions([
         "-c:v copy",
         "-c:a aac",
@@ -31,21 +53,37 @@ app.post("/merge", upload.fields([
       ])
       .save(outputPath)
       .on("end", () => {
+
         res.download(outputPath, () => {
-          fs.unlinkSync(videoPath);
-          fs.unlinkSync(audioPath);
-          fs.unlinkSync(outputPath);
+          // Cleanup
+          try {
+            fs.unlinkSync(videoFile.path);
+            fs.unlinkSync(audioFile.path);
+            fs.unlinkSync(outputPath);
+          } catch (cleanupErr) {
+            console.error("Cleanup error:", cleanupErr);
+          }
         });
+
       })
       .on("error", (err) => {
-        console.error(err);
+        console.error("FFmpeg error:", err);
         res.status(500).send("Merge failed");
       });
 
   } catch (err) {
+    console.error("Server error:", err);
     res.status(500).send("Server error");
   }
+
+});
+
+// Health check route (optional but useful)
+app.get("/", (req, res) => {
+  res.send("Video Merge API is running");
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Server running"));
+app.listen(PORT, () => {
+  console.log("Server running on port", PORT);
+});
